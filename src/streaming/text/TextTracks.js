@@ -98,7 +98,7 @@ function TextTracks() {
         let kind = textTrackQueue[i].kind;
         let label = textTrackQueue[i].label !== undefined ? textTrackQueue[i].label : textTrackQueue[i].lang;
         let lang = textTrackQueue[i].lang;
-        let track = video.addTextTrack(kind, label, lang);
+        let track = videoModel.addTextTrack(kind, label, lang);
 
         return track;
     }
