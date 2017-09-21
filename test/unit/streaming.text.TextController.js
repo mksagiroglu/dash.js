@@ -20,6 +20,14 @@ describe('TextController', function () {
     let textController;
 
     beforeEach(function () {
+		if (typeof document === 'undefined') {
+            global.document = {
+                getElementById: function () {
+                    return null;
+                }
+            };
+        }
+		
         textTracks = TextTracks(context).getInstance();
         textTracks.setConfig({
             videoModel: videoModelMock
