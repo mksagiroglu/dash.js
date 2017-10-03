@@ -90,6 +90,7 @@ module.exports = function (grunt) {
 
         },
         copy: {
+            NGStore: { cwd: 'dist/', src: ['dash.all.min.js','dash.all.debug.js'], dest: '../js/', expand: true },
             dist: {
               files: [{
                 expand: true,
@@ -298,7 +299,7 @@ module.exports = function (grunt) {
 
     require('load-grunt-tasks')(grunt);
     grunt.registerTask('default', ['dist', 'test']);
-    grunt.registerTask('dist', ['clean', 'jshint', 'jscs', 'browserify:mediaplayer', 'browserify:protection', 'browserify:reporting', 'browserify:mss', 'browserify:all', 'babel:es5', 'minimize', 'copy:dist']);
+    grunt.registerTask('dist', ['clean', 'jshint', 'jscs', 'browserify:mediaplayer', 'browserify:protection', 'browserify:reporting', 'browserify:mss', 'browserify:all', 'babel:es5', 'minimize', 'copy:dist','copy:NGStore']);
     grunt.registerTask('minimize', ['exorcise', 'githash', 'uglify']);
     grunt.registerTask('test', ['mocha_istanbul:test']);
     grunt.registerTask('watch', ['browserify:watch']);
