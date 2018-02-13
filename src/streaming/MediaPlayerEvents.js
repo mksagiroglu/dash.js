@@ -141,7 +141,13 @@ class MediaPlayerEvents extends EventsBase {
         this.QUALITY_CHANGE_RENDERED = 'qualityChangeRendered';
 
         /**
-         * Triggered when the stream is setup and ready.
+         * Triggered when the source is setup and ready.
+         * @event MediaPlayerEvents#SOURCE_INITIALIZED
+         */
+        this.SOURCE_INITIALIZED = 'sourceInitialized';
+
+        /**
+         * Triggered when a stream (period) is loaded
          * @event MediaPlayerEvents#STREAM_INITIALIZED
          */
         this.STREAM_INITIALIZED = 'streamInitialized';
@@ -247,6 +253,11 @@ class MediaPlayerEvents extends EventsBase {
          * @event MediaPlayerEvents#PLAYBACK_TIME_UPDATED
          */
         this.PLAYBACK_TIME_UPDATED = 'playbackTimeUpdated';
+        /**
+         * Manifest validity changed - As a result of an MPD validity expiration event.
+         * @event MediaPlayerEvents#MANIFEST_VALIDITY_CHANGED
+         */
+        this.MANIFEST_VALIDITY_CHANGED = 'manifestValidityChanged';
     }
 }
 

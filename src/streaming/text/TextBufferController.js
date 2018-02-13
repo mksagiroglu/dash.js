@@ -35,6 +35,7 @@ import NotFragmentedTextBufferController from './NotFragmentedTextBufferControll
 
 function TextBufferController(config) {
 
+    config = config || {};
     let context = this.context;
 
     let _BufferControllerImpl;
@@ -135,6 +136,10 @@ function TextBufferController(config) {
         _BufferControllerImpl.switchInitData(streamId, representationId);
     }
 
+    function getIsPruningInProgress() {
+        return _BufferControllerImpl.getIsPruningInProgress();
+    }
+
     instance = {
         getBufferControllerType: getBufferControllerType,
         initialize: initialize,
@@ -148,6 +153,7 @@ function TextBufferController(config) {
         setMediaSource: setMediaSource,
         getMediaSource: getMediaSource,
         getIsBufferingCompleted: getIsBufferingCompleted,
+        getIsPruningInProgress: getIsPruningInProgress,
         switchInitData: switchInitData,
         reset: reset
     };
