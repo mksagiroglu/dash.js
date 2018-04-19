@@ -101,7 +101,7 @@ declare namespace dashjs {
         isMuted(): boolean;
         setVolume(value: number): void;
         getVolume(): number;
-        time(streamId: string): number;
+        time(streamId: string | undefined): number;
         duration(): number;
         timeAsUTC(): number;
         durationAsUTC(): number;
@@ -256,6 +256,7 @@ declare namespace dashjs {
         PLAYBACK_SEEKING: 'playbackSeeking';
         PLAYBACK_STARTED: 'playbackStarted';
         PLAYBACK_TIME_UPDATED: 'playbackTimeUpdated';
+        PLAYBACK_WAITING: 'playbackWaiting';
         PROTECTION_CREATED: 'public_protectioncreated';
         PROTECTION_DESTROYED: 'public_protectiondestroyed';
         TRACK_CHANGE_RENDERED: 'trackChangeRendered';
@@ -460,6 +461,11 @@ declare namespace dashjs {
         type: MediaPlayerEvents['PLAYBACK_TIME_UPDATED'];
         time: number | null;
         timeToEnd: number;
+    }
+
+    export interface PlaybackWaitingEvent extends Event {
+        type: MediaPlayerEvents['PLAYBACK_WAITING'];
+        playingTime: number | null;
     }
 
     export interface ProtectionCreatedEvent extends Event {

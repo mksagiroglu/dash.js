@@ -212,6 +212,7 @@ function PlaybackController() {
             eventBus.off(Events.DATA_UPDATE_COMPLETED, onDataUpdateCompleted, this);
             eventBus.off(Events.BUFFER_LEVEL_STATE_CHANGED, onBufferLevelStateChanged, this);
             eventBus.off(Events.BYTES_APPENDED, onBytesAppended, this);
+            eventBus.off(Events.PERIOD_SWITCH_STARTED, onPeriodSwitchStarted, this);
             stopUpdatingWallclockTime();
             removeAllListeners();
         }
@@ -377,6 +378,13 @@ function PlaybackController() {
         startUpdatingWallclockTime();
         eventBus.trigger(Events.PLAYBACK_STARTED, {
             startTime: getTime()
+        });
+    }
+
+    function onPlaybackWaiting() {
+        log('Native video element event: waiting');
+        eventBus.trigger(Events.PLAYBACK_WAITING, {
+            playingTime: getTime()
         });
     }
 
@@ -556,6 +564,7 @@ function PlaybackController() {
     function addAllListeners() {
         videoModel.addEventListener('canplay', onCanPlay);
         videoModel.addEventListener('play', onPlaybackStart);
+        videoModel.addEventListener('waiting', onPlaybackWaiting);
         videoModel.addEventListener('playing', onPlaybackPlaying);
         videoModel.addEventListener('pause', onPlaybackPaused);
         videoModel.addEventListener('error', onPlaybackError);
@@ -571,6 +580,7 @@ function PlaybackController() {
     function removeAllListeners() {
         videoModel.removeEventListener('canplay', onCanPlay);
         videoModel.removeEventListener('play', onPlaybackStart);
+        videoModel.removeEventListener('waiting', onPlaybackWaiting);
         videoModel.removeEventListener('playing', onPlaybackPlaying);
         videoModel.removeEventListener('pause', onPlaybackPaused);
         videoModel.removeEventListener('error', onPlaybackError);
