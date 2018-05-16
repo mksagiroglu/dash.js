@@ -57,7 +57,6 @@ function StreamProcessor(config) {
     let streamController = config.streamController;
     let mediaController = config.mediaController;
     let textController = config.textController;
-    let sourceBufferController = config.sourceBufferController;
     let domStorage = config.domStorage;
     let metricsModel = config.metricsModel;
     let dashMetrics = config.dashMetrics;
@@ -115,12 +114,10 @@ function StreamProcessor(config) {
             playbackController: playbackController,
             streamController: streamController,
             textController: textController,
-            sourceBufferController: sourceBufferController,
-            streamProcessor: instance
+            streamProcessor: instance,
+            mediaController: mediaController
         });
-
         representationController = RepresentationController(context).create();
-
         representationController.setConfig({
             abrController: abrController,
             domStorage: domStorage,
@@ -268,6 +265,14 @@ function StreamProcessor(config) {
         return bufferController.getMediaSource();
     }
 
+    function setMediaSource(mediaSource) {
+        bufferController.setMediaSource(mediaSource, getMediaInfo());
+    }
+
+    function dischargePreBuffer() {
+        bufferController.dischargePreBuffer();
+    }
+
     function getScheduleController() {
         return scheduleController;
     }
@@ -292,9 +297,9 @@ function StreamProcessor(config) {
         return bufferController.getBufferLevel();
     }
 
-    function switchInitData(representationId) {
+    function switchInitData(representationId, bufferResetEnabled) {
         if (bufferController) {
-            bufferController.switchInitData(getStreamInfo().id, representationId);
+            bufferController.switchInitData(getStreamInfo().id, representationId, bufferResetEnabled);
         }
     }
 
@@ -315,7 +320,6 @@ function StreamProcessor(config) {
                 metricsModel: metricsModel,
                 mediaPlayerModel: mediaPlayerModel,
                 manifestModel: manifestModel,
-                sourceBufferController: sourceBufferController,
                 errHandler: errHandler,
                 streamController: streamController,
                 mediaController: mediaController,
@@ -331,7 +335,6 @@ function StreamProcessor(config) {
                 metricsModel: metricsModel,
                 mediaPlayerModel: mediaPlayerModel,
                 manifestModel: manifestModel,
-                sourceBufferController: sourceBufferController,
                 errHandler: errHandler,
                 streamController: streamController,
                 mediaController: mediaController,
@@ -370,6 +373,8 @@ function StreamProcessor(config) {
         getMediaInfoArr: getMediaInfoArr,
         getMediaInfo: getMediaInfo,
         getMediaSource: getMediaSource,
+        setMediaSource: setMediaSource,
+        dischargePreBuffer: dischargePreBuffer,
         getBuffer: getBuffer,
         setBuffer: setBuffer,
         registerExternalController: registerExternalController,

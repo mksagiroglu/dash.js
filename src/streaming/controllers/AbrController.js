@@ -228,6 +228,23 @@ function AbrController() {
     }
 
     /**
+     * Gets top BitrateInfo for the player
+     * @param {string} type - 'video' or 'audio' are the type options.
+     * @returns {BitrateInfo | null}
+     */
+    function getTopBitrateInfoFor(type) {
+        if (type  && streamProcessorDict && streamProcessorDict[type]) {
+            const streamInfo = streamProcessorDict[type].getStreamInfo();
+            if (streamInfo.id) {
+                const idx = getTopQualityIndexFor(type, streamInfo.id);
+                const bitrates = getBitrateList(streamProcessorDict[type].getMediaInfo());
+                return bitrates[idx] ? bitrates[idx] : null;
+            }
+        }
+        return null;
+    }
+
+    /**
      * @param {string} type
      * @returns {number} A value of the initial bitrate, kbps
      * @memberof AbrController#
@@ -386,9 +403,11 @@ function AbrController() {
             });
 
             if (droppedFramesHistory) {
-                droppedFramesHistory.push(playbackIndex, videoModel.getPlaybackQuality());
+                const playbackQuality = videoModel.getPlaybackQuality();
+                if (playbackQuality) {
+                    droppedFramesHistory.push(playbackIndex, playbackQuality);
+                }
             }
-
             if (getAutoSwitchBitrateFor(type)) {
                 const minIdx = getMinAllowedIndexFor(type);
                 const topQualityIdx = getTopQualityIndexFor(type, streamId);
@@ -631,10 +650,12 @@ function AbrController() {
     }
 
     function setElementSize() {
-        const hasPixelRatio = usePixelRatioInLimitBitrateByPortal && window.hasOwnProperty('devicePixelRatio');
-        const pixelRatio = hasPixelRatio ? window.devicePixelRatio : 1;
-        elementWidth = videoModel.getClientWidth() * pixelRatio;
-        elementHeight = videoModel.getClientHeight() * pixelRatio;
+        if (videoModel) {
+            const hasPixelRatio = usePixelRatioInLimitBitrateByPortal && window.hasOwnProperty('devicePixelRatio');
+            const pixelRatio = hasPixelRatio ? window.devicePixelRatio : 1;
+            elementWidth = videoModel.getClientWidth() * pixelRatio;
+            elementHeight = videoModel.getClientHeight() * pixelRatio;
+        }
     }
 
     function checkPortalSize(idx, type) {
@@ -710,6 +731,7 @@ function AbrController() {
         getBitrateList: getBitrateList,
         getQualityForBitrate: getQualityForBitrate,
         getMaxAllowedBitrateFor: getMaxAllowedBitrateFor,
+        getTopBitrateInfoFor: getTopBitrateInfoFor,
         getMinAllowedBitrateFor: getMinAllowedBitrateFor,
         setMaxAllowedBitrateFor: setMaxAllowedBitrateFor,
         setMinAllowedBitrateFor: setMinAllowedBitrateFor,

@@ -223,8 +223,7 @@ function DashAdapter() {
             const mpd = dashManifestModel.getMpd(manifest);
 
             voLocalPeriods = dashManifestModel.getRegularPeriods(mpd);
-
-        }else {
+        } else {
             if (voPeriods.length > 0) {
                 manifest = voPeriods[0].mpd.manifest;
             } else {
@@ -309,7 +308,7 @@ function DashAdapter() {
         voAdaptations = {};
     }
 
-    function getStreamsInfo(externalManifest) {
+    function getStreamsInfo(externalManifest, maxStreamsInfo) {
         const streams = [];
         let voLocalPeriods = voPeriods;
 
@@ -321,7 +320,10 @@ function DashAdapter() {
             voLocalPeriods = dashManifestModel.getRegularPeriods(mpd);
         }
 
-        for (let i = 0; i < voLocalPeriods.length; i++) {
+        if (!maxStreamsInfo) {
+            maxStreamsInfo = voLocalPeriods.length;
+        }
+        for (let i = 0; i < maxStreamsInfo; i++) {
             streams.push(convertPeriodToStreamInfo(voLocalPeriods[i]));
         }
 
