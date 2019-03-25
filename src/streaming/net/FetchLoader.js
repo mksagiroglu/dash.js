@@ -30,7 +30,6 @@
  */
 
 import FactoryMaker from '../../core/FactoryMaker';
-import BoxParser from '../utils/BoxParser';
 
 /**
 * @module FetchLoader
@@ -38,21 +37,18 @@ import BoxParser from '../utils/BoxParser';
 * @param {Object} cfg - dependencies from parent
 */
 function FetchLoader(cfg) {
+
     cfg = cfg || {};
     const requestModifier = cfg.requestModifier;
+    const boxParser = cfg.boxParser;
 
     let instance;
 
     function load(httpRequest) {
 
         // Variables will be used in the callback functions
-        let firstProgress = true; /*jshint ignore:line*/
-        let needFailureReport = true; /*jshint ignore:line*/
-        let requestStartTime = new Date();
-        let lastTraceTime = requestStartTime; /*jshint ignore:line*/
-        let lastTraceReceivedCount = 0; /*jshint ignore:line*/
-
-        let request = httpRequest.request;
+        const requestStartTime = new Date();
+        const request = httpRequest.request;
 
         const headers = new Headers(); /*jshint ignore:line*/
         if (request.range) {
@@ -114,7 +110,8 @@ function FetchLoader(cfg) {
                     httpRequest.response.response = buffer;
                     const event = {
                         loaded: buffer.byteLength,
-                        total: buffer.byteLength
+                        total: buffer.byteLength,
+                        stream: false
                     };
                     httpRequest.progress(event);
                     httpRequest.onload();
@@ -130,6 +127,8 @@ function FetchLoader(cfg) {
             let offset = 0;
 
             httpRequest.reader = response.body.getReader();
+            let downLoadedData = [];
+
             const processResult = function ({ value, done }) {
                 if (done) {
                     if (remaining) {
@@ -139,7 +138,9 @@ function FetchLoader(cfg) {
                         httpRequest.progress({
                             loaded: bytesReceived,
                             total: isNaN(totalBytes) ? bytesReceived : totalBytes,
-                            lengthComputable: true
+                            lengthComputable: true,
+                            time: calculateDownloadedTime(downLoadedData, bytesReceived),
+                            stream: true
                         });
 
                         httpRequest.response.response = remaining.buffer;
@@ -152,8 +153,12 @@ function FetchLoader(cfg) {
                 if (value && value.length > 0) {
                     remaining = concatTypedArray(remaining, value);
                     bytesReceived += value.length;
+                    downLoadedData.push({
+                        ts: Date.now(),
+                        bytes: value.length
+                    });
 
-                    const boxesInfo = BoxParser().getInstance().findLastTopIsoBoxCompleted(['moov', 'mdat'], remaining, offset);
+                    const boxesInfo = boxParser.findLastTopIsoBoxCompleted(['moov', 'mdat'], remaining, offset);
                     if (boxesInfo.found) {
                         const end = boxesInfo.lastCompletedOffset + boxesInfo.size;
 
@@ -208,8 +213,11 @@ function FetchLoader(cfg) {
     function read(httpRequest, processResult) {
         httpRequest.reader.read()
         .then(processResult)
-        .catch(function () {
-            // don't do nothing. Manage this error in fetch method promise
+        .catch(function (e) {
+            if (httpRequest.onerror && httpRequest.response.status === 200) {
+                // Error, but response code is 200, trigger error
+                httpRequest.onerror(e);
+            }
         });
     }
 
@@ -238,9 +246,28 @@ function FetchLoader(cfg) {
         }
     }
 
+    function calculateDownloadedTime(datum, bytesReceived) {
+        datum = datum.filter(data => data.bytes > ((bytesReceived / 4) / datum.length) );
+        if (datum.length > 1) {
+            let time = 0;
+            const avgTimeDistance = (datum[datum.length - 1].ts - datum[0].ts) / datum.length;
+            datum.forEach((data, index) => {
+                // To be counted the data has to be over a threshold
+                const next = datum[index + 1];
+                if (next) {
+                    const distance = next.ts - data.ts;
+                    time += distance < avgTimeDistance ? distance : 0;
+                }
+            });
+            return time;
+        }
+        return null;
+    }
+
     instance = {
         load: load,
-        abort: abort
+        abort: abort,
+        calculateDownloadedTime: calculateDownloadedTime
     };
 
     return instance;

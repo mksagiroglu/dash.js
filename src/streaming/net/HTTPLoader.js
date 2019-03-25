@@ -32,7 +32,8 @@ import XHRLoader from './XHRLoader';
 import FetchLoader from './FetchLoader';
 import { HTTPRequest } from '../vo/metrics/HTTPRequest';
 import FactoryMaker from '../../core/FactoryMaker';
-import ErrorHandler from '../utils/ErrorHandler';
+import Errors from '../../core/errors/Errors';
+import DashJSError from '../vo/DashJSError';
 
 /**
  * @module HTTPLoader
@@ -48,27 +49,39 @@ function HTTPLoader(cfg) {
     const metricsModel = cfg.metricsModel;
     const mediaPlayerModel = cfg.mediaPlayerModel;
     const requestModifier = cfg.requestModifier;
+    const boxParser = cfg.boxParser;
     const useFetch = cfg.useFetch || false;
 
-    let instance;
-    let requests;
-    let delayedRequests;
-    let retryTimers;
-    let downloadErrorToRequestTypeMap;
+    let instance,
+        requests,
+        delayedRequests,
+        retryRequests,
+        downloadErrorToRequestTypeMap,
+        newDownloadErrorToRequestTypeMap;
 
     function setup() {
         requests = [];
         delayedRequests = [];
-        retryTimers = [];
+        retryRequests = [];
 
         downloadErrorToRequestTypeMap = {
-            [HTTPRequest.MPD_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_MANIFEST,
-            [HTTPRequest.XLINK_EXPANSION_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_XLINK,
-            [HTTPRequest.INIT_SEGMENT_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_INITIALIZATION,
-            [HTTPRequest.MEDIA_SEGMENT_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_CONTENT,
-            [HTTPRequest.INDEX_SEGMENT_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_CONTENT,
-            [HTTPRequest.BITSTREAM_SWITCHING_SEGMENT_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_CONTENT,
-            [HTTPRequest.OTHER_TYPE]: ErrorHandler.DOWNLOAD_ERROR_ID_CONTENT
+            [HTTPRequest.MPD_TYPE]: Errors.DOWNLOAD_ERROR_ID_MANIFEST,
+            [HTTPRequest.XLINK_EXPANSION_TYPE]: Errors.DOWNLOAD_ERROR_ID_XLINK,
+            [HTTPRequest.INIT_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_INITIALIZATION,
+            [HTTPRequest.MEDIA_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT,
+            [HTTPRequest.INDEX_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT,
+            [HTTPRequest.BITSTREAM_SWITCHING_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT,
+            [HTTPRequest.OTHER_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT
+        };
+
+        newDownloadErrorToRequestTypeMap = {
+            [HTTPRequest.MPD_TYPE]: Errors.DOWNLOAD_ERROR_ID_MANIFEST_CODE,
+            [HTTPRequest.XLINK_EXPANSION_TYPE]: Errors.DOWNLOAD_ERROR_ID_XLINK_CODE,
+            [HTTPRequest.INIT_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_INITIALIZATION_CODE,
+            [HTTPRequest.MEDIA_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT_CODE,
+            [HTTPRequest.INDEX_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT_CODE,
+            [HTTPRequest.BITSTREAM_SWITCHING_SEGMENT_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT_CODE,
+            [HTTPRequest.OTHER_TYPE]: Errors.DOWNLOAD_ERROR_ID_CONTENT_CODE
         };
     }
 
@@ -107,9 +120,14 @@ function HTTPLoader(cfg) {
                     request.requestEndDate,
                     httpRequest.response ? httpRequest.response.status : null,
                     request.duration,
-                    httpRequest.response && httpRequest.response.getAllResponseHeaders ? httpRequest.response.getAllResponseHeaders() : httpRequest.response.responseHeaders,
+                    httpRequest.response && httpRequest.response.getAllResponseHeaders ? httpRequest.response.getAllResponseHeaders() :
+                        httpRequest.response ? httpRequest.response.responseHeaders : [],
                     success ? traces : null
                 );
+
+                if (request.type === HTTPRequest.MPD_TYPE) {
+                    metricsModel.addManifestUpdate('stream', request.type, request.requestStartDate, request.requestEndDate);
+                }
             }
         };
 
@@ -125,17 +143,24 @@ function HTTPLoader(cfg) {
 
                 if (remainingAttempts > 0) {
                     remainingAttempts--;
-                    retryTimers.push(
-                        setTimeout(function () {
-                            internalLoad(config, remainingAttempts);
-                        }, mediaPlayerModel.getRetryIntervalForType(request.type))
-                    );
+                    let retryRequest = { config: config };
+                    retryRequests.push(retryRequest);
+                    retryRequest.timeout = setTimeout(function () {
+                        if (retryRequests.indexOf(retryRequest) === -1) {
+                            return;
+                        } else {
+                            retryRequests.splice(retryRequests.indexOf(retryRequest), 1);
+                        }
+                        internalLoad(config, remainingAttempts);
+                    }, mediaPlayerModel.getRetryIntervalForType(request.type));
                 } else {
                     errHandler.downloadError(
                         downloadErrorToRequestTypeMap[request.type],
                         request.url,
                         request
                     );
+
+                    errHandler.error(new DashJSError(newDownloadErrorToRequestTypeMap[request.type], request.url + ' is not available', {request: request, response: httpRequest.response}));
 
                     if (config.error) {
                         config.error(request, 'error', httpRequest.response.statusText);
@@ -167,7 +192,7 @@ function HTTPLoader(cfg) {
             if (!event.noTrace) {
                 traces.push({
                     s: lastTraceTime,
-                    d: currentTime.getTime() - lastTraceTime.getTime(),
+                    d: event.time ? event.time : currentTime.getTime() - lastTraceTime.getTime(),
                     b: [event.loaded ? event.loaded - lastTraceReceivedCount : 0]
                 });
 
@@ -175,8 +200,8 @@ function HTTPLoader(cfg) {
                 lastTraceReceivedCount = event.loaded;
             }
 
-            if (config.progress && event.data) {
-                config.progress(event.data);
+            if (config.progress && event) {
+                config.progress(event);
             }
         };
 
@@ -201,13 +226,15 @@ function HTTPLoader(cfg) {
         };
 
         let loader;
-        if (useFetch && window.fetch && request.responseType === 'arraybuffer') {
+        if (useFetch && window.fetch && request.responseType === 'arraybuffer' && request.type === HTTPRequest.MEDIA_SEGMENT_TYPE) {
             loader = FetchLoader(context).create({
-                requestModifier: requestModifier
+                requestModifier: requestModifier,
+                boxParser: boxParser
             });
         } else {
             loader = XHRLoader(context).create({
-                requestModifier: requestModifier
+                requestModifier: requestModifier,
+                boxParser: boxParser
             });
         }
 
@@ -279,8 +306,14 @@ function HTTPLoader(cfg) {
      * @instance
      */
     function abort() {
-        retryTimers.forEach(t => clearTimeout(t));
-        retryTimers = [];
+        retryRequests.forEach(t => {
+            clearTimeout(t.timeout);
+            // abort request in order to trigger LOADING_ABANDONED event
+            if (t.config.request && t.config.abort) {
+                t.config.abort(t.config.request);
+            }
+        });
+        retryRequests = [];
 
         delayedRequests.forEach(x => clearTimeout(x.delayTimeout));
         delayedRequests = [];

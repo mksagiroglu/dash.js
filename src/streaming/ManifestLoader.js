@@ -37,13 +37,10 @@ import DashJSError from './vo/DashJSError';
 import {HTTPRequest} from './vo/metrics/HTTPRequest';
 import EventBus from '../core/EventBus';
 import Events from '../core/events/Events';
+import Errors from '../core/errors/Errors';
 import FactoryMaker from '../core/FactoryMaker';
 import DashParser from '../dash/parser/DashParser';
 import Debug from '../core/Debug';
-
-const MANIFEST_LOADER_ERROR_PARSING_FAILURE = 1;
-const MANIFEST_LOADER_ERROR_LOADING_FAILURE = 2;
-const MANIFEST_LOADER_MESSAGE_PARSING_FAILURE = 'parsing failed';
 
 function ManifestLoader(config) {
 
@@ -51,17 +48,18 @@ function ManifestLoader(config) {
     const context = this.context;
     const eventBus = EventBus(context).getInstance();
     const urlUtils = URLUtils(context).getInstance();
-    const debug = Debug(context).getInstance();
-    const log = debug.log;
 
     let instance,
+        logger,
         httpLoader,
         xlinkController,
         parser;
+
     let mssHandler = config.mssHandler;
     let errHandler = config.errHandler;
 
     function setup() {
+        logger = Debug(context).getInstance().getLogger(instance);
         eventBus.on(Events.XLINK_READY, onXlinkReady, instance);
 
         httpLoader = HTTPLoader(context).create({
@@ -97,14 +95,10 @@ function ManifestLoader(config) {
             if (mssHandler) {
                 parser = mssHandler.createMssParser();
                 mssHandler.registerEvents();
-            } else {
-                errHandler.manifestError('manifest type unsupported', 'createParser');
             }
             return parser;
         } else if (data.indexOf('MPD') > -1) {
-            return DashParser(context).create({
-                errorHandler: errHandler
-            });
+            return DashParser(context).create();
         } else {
             return parser;
         }
@@ -116,8 +110,12 @@ function ManifestLoader(config) {
         httpLoader.load({
             request: request,
             success: function (data, textStatus, responseURL) {
+                // Manage situations in which success is called after calling reset
+                if (!xlinkController) return;
+
                 let actualUrl,
-                    baseUri;
+                    baseUri,
+                    manifest;
 
                 // Handle redirects for the MPD - as per RFC3986 Section 5.1.3
                 // also handily resolves relative MPD URLs to absolute
@@ -145,8 +143,8 @@ function ManifestLoader(config) {
                         Events.INTERNAL_MANIFEST_LOADED, {
                             manifest: null,
                             error: new DashJSError(
-                                MANIFEST_LOADER_ERROR_PARSING_FAILURE,
-                                `Failed detecting manifest type: ${url}`
+                                Errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_CODE,
+                                Errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_MESSAGE + `${url}`
                             )
                         }
                     );
@@ -157,7 +155,20 @@ function ManifestLoader(config) {
                 xlinkController.setMatchers(parser.getMatchers());
                 xlinkController.setIron(parser.getIron());
 
-                const manifest = parser.parse(data);
+                try {
+                    manifest = parser.parse(data);
+                } catch (e) {
+                    eventBus.trigger(
+                        Events.INTERNAL_MANIFEST_LOADED, {
+                            manifest: null,
+                            error: new DashJSError(
+                                Errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_CODE,
+                                Errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_MESSAGE + `${url}`
+                           )
+                        }
+                    );
+                    return;
+                }
 
                 if (manifest) {
                     manifest.url = actualUrl || url;
@@ -171,7 +182,7 @@ function ManifestLoader(config) {
                     // Compare with ManifestUpdater/DashManifestModel
                     if (manifest.hasOwnProperty(Constants.LOCATION)) {
                         baseUri = urlUtils.parseBaseUrl(manifest.Location_asArray[0]);
-                        log('BaseURI set by Location to: ' + baseUri);
+                        logger.debug('BaseURI set by Location to: ' + baseUri);
                     }
 
                     manifest.baseUri = baseUri;
@@ -182,8 +193,8 @@ function ManifestLoader(config) {
                         Events.INTERNAL_MANIFEST_LOADED, {
                             manifest: null,
                             error: new DashJSError(
-                                MANIFEST_LOADER_ERROR_PARSING_FAILURE,
-                                MANIFEST_LOADER_MESSAGE_PARSING_FAILURE
+                                Errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_CODE,
+                                Errors.MANIFEST_LOADER_PARSING_FAILURE_ERROR_MESSAGE + `${url}`
                             )
                         }
                     );
@@ -194,8 +205,8 @@ function ManifestLoader(config) {
                     Events.INTERNAL_MANIFEST_LOADED, {
                         manifest: null,
                         error: new DashJSError(
-                            MANIFEST_LOADER_ERROR_LOADING_FAILURE,
-                            `Failed loading manifest: ${url}, ${errorText}`
+                            Errors.MANIFEST_LOADER_LOADING_FAILURE_ERROR_CODE,
+                            Errors.MANIFEST_LOADER_LOADING_FAILURE_ERROR_MESSAGE + `${url}, ${errorText}`
                         )
                     }
                 );
@@ -234,7 +245,4 @@ function ManifestLoader(config) {
 ManifestLoader.__dashjs_factory_name = 'ManifestLoader';
 
 const factory = FactoryMaker.getClassFactory(ManifestLoader);
-factory.MANIFEST_LOADER_ERROR_PARSING_FAILURE = MANIFEST_LOADER_ERROR_PARSING_FAILURE;
-factory.MANIFEST_LOADER_ERROR_LOADING_FAILURE = MANIFEST_LOADER_ERROR_LOADING_FAILURE;
-FactoryMaker.updateClassFactory(ManifestLoader.__dashjs_factory_name, factory);
 export default factory;

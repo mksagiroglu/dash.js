@@ -39,9 +39,9 @@ function TextTracks() {
 
     const context = this.context;
     const eventBus = EventBus(context).getInstance();
-    const log = Debug(context).getInstance().log;
 
     let instance,
+        logger,
         Cue,
         videoModel,
         textTrackQueue,
@@ -53,11 +53,14 @@ function TextTracks() {
         actualVideoHeight,
         captionContainer,
         videoSizeCheckInterval,
-        isChrome,
         fullscreenAttribute,
         displayCCOnTop,
         previousISDState,
         topZIndex;
+
+    function setup() {
+        logger = Debug(context).getInstance().getLogger(instance);
+    }
 
     function initialize() {
         if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -78,13 +81,6 @@ function TextTracks() {
         topZIndex = 2147483647;
         previousISDState = null;
 
-        //TODO Check if IE has resolved issues: Then revert to not using the addTextTrack API for all browsers.
-        // https://connect.microsoft.com/IE/feedbackdetail/view/1660701/text-tracks-do-not-fire-change-addtrack-or-removetrack-events
-        // https://connect.microsoft.com/IE/feedback/details/1573380/htmltrackelement-track-addcue-throws-invalidstateerror-when-adding-new-cue
-        // Same issue with Firefox.
-        //isIE11orEdge = !!navigator.userAgent.match(/Trident.*rv[ :]*11\./) || navigator.userAgent.match(/Edge/);
-        //isFirefox = !!navigator.userAgent.match(/Firefox/);
-        isChrome = !!navigator.userAgent.match(/Chrome/) && !navigator.userAgent.match(/Edge/);
         if (document.fullscreenElement !== undefined) {
             fullscreenAttribute = 'fullscreenElement'; // Standard and Edge
         } else if (document.webkitIsFullScreen !== undefined) {
@@ -99,17 +95,11 @@ function TextTracks() {
 
     function createTrackForUserAgent (i) {
         const kind = textTrackQueue[i].kind;
-        const label = textTrackQueue[i].label !== undefined ? textTrackQueue[i].label : textTrackQueue[i].lang;
+        const label = textTrackQueue[i].id !== undefined ? textTrackQueue[i].id : textTrackQueue[i].lang;
         const lang = textTrackQueue[i].lang;
         const isTTML = textTrackQueue[i].isTTML;
         const isEmbedded = textTrackQueue[i].isEmbedded;
-        const track = isChrome ? document.createElement('track') : videoModel.addTextTrack(kind, label, lang);
-
-        if (isChrome) {
-            track.kind = kind;
-            track.label = label;
-            track.srclang = lang;
-        }
+        const track = videoModel.addTextTrack(kind, label, lang);
 
         track.isEmbedded = isEmbedded;
         track.isTTML = isTTML;
@@ -127,7 +117,7 @@ function TextTracks() {
 
     function addTextTrack(textTrackInfoVO, totalTextTracks) {
         if (textTrackQueue.length === totalTextTracks) {
-            log('Trying to add too many tracks.');
+            logger.error('Trying to add too many tracks.');
             return;
         }
 
@@ -149,9 +139,6 @@ function TextTracks() {
                     /*jshint -W024 */
                     track.default = true;
                     defaultIndex = i;
-                }
-                if (isChrome) {
-                    videoModel.appendChild(track);
                 }
 
                 const textTrack = getTrackByIdx(i);
@@ -263,21 +250,25 @@ function TextTracks() {
             actualVideoTop = newVideoTop + videoOffsetTop;
             actualVideoWidth = newVideoWidth;
             actualVideoHeight = newVideoHeight;
-            captionContainer.style.left = actualVideoLeft + 'px';
-            captionContainer.style.top = actualVideoTop + 'px';
-            captionContainer.style.width = actualVideoWidth + 'px';
-            captionContainer.style.height = actualVideoHeight + 'px';
 
-            // Video view has changed size, so resize any active cues
-            for (let i = 0; track.activeCues && i < track.activeCues.length; ++i) {
-                const cue = track.activeCues[i];
-                cue.scaleCue(cue);
+            if (captionContainer) {
+                const containerStyle = captionContainer.style;
+                containerStyle.left = actualVideoLeft + 'px';
+                containerStyle.top = actualVideoTop + 'px';
+                containerStyle.width = actualVideoWidth + 'px';
+                containerStyle.height = actualVideoHeight + 'px';
+                containerStyle.zIndex = (fullscreenAttribute && document[fullscreenAttribute]) || displayCCOnTop ? topZIndex : null;
+                eventBus.trigger(Events.CAPTION_CONTAINER_RESIZE, {});
             }
 
-            if ((fullscreenAttribute && document[fullscreenAttribute]) || displayCCOnTop) {
-                captionContainer.style.zIndex = topZIndex;
-            } else {
-                captionContainer.style.zIndex = null;
+            // Video view has changed size, so resize any active cues
+            const activeCues = track.activeCues;
+            if (activeCues) {
+                const len = activeCues.length;
+                for (let i = 0; i < len; ++i) {
+                    const cue = activeCues[i];
+                    cue.scaleCue(cue);
+                }
             }
         }
     }
@@ -361,30 +352,33 @@ function TextTracks() {
     }
 
     function renderCaption(cue) {
-        const finalCue = document.createElement('div');
-        captionContainer.appendChild(finalCue);
-        previousISDState = renderHTML(cue.isd, finalCue, function (uri) {
-            const imsc1ImgUrnTester = /^(urn:)(mpeg:[a-z0-9][a-z0-9-]{0,31}:)(subs:)([0-9]+)$/;
-            const smpteImgUrnTester = /^#(.*)$/;
-            if (imsc1ImgUrnTester.test(uri)) {
-                const match = imsc1ImgUrnTester.exec(uri);
-                const imageId = parseInt(match[4], 10) - 1;
-                const imageData = btoa(cue.images[imageId]);
-                const dataUrl = 'data:image/png;base64,' + imageData;
-                return dataUrl;
-            } else if (smpteImgUrnTester.test(uri)) {
-                const match = smpteImgUrnTester.exec(uri);
-                const imageId = match[1];
-                const dataUrl = 'data:image/png;base64,' + cue.embeddedImages[imageId];
-                return dataUrl;
-            } else {
-                return null;
-            }
-        }, captionContainer.clientHeight, captionContainer.clientWidth, false/*displayForcedOnlyMode*/, function (err) {
-            log('[TextTracks][renderCaption]', err);
-            //TODO add ErrorHandler management
-        }, previousISDState, true /*enableRollUp*/);
-        finalCue.id = cue.cueID;
+        if (captionContainer) {
+            const finalCue = document.createElement('div');
+            captionContainer.appendChild(finalCue);
+            previousISDState = renderHTML(cue.isd, finalCue, function (uri) {
+                const imsc1ImgUrnTester = /^(urn:)(mpeg:[a-z0-9][a-z0-9-]{0,31}:)(subs:)([0-9]+)$/;
+                const smpteImgUrnTester = /^#(.*)$/;
+                if (imsc1ImgUrnTester.test(uri)) {
+                    const match = imsc1ImgUrnTester.exec(uri);
+                    const imageId = parseInt(match[4], 10) - 1;
+                    const imageData = btoa(cue.images[imageId]);
+                    const dataUrl = 'data:image/png;base64,' + imageData;
+                    return dataUrl;
+                } else if (smpteImgUrnTester.test(uri)) {
+                    const match = smpteImgUrnTester.exec(uri);
+                    const imageId = match[1];
+                    const dataUrl = 'data:image/png;base64,' + cue.embeddedImages[imageId];
+                    return dataUrl;
+                } else {
+                    return null;
+                }
+            }, captionContainer.clientHeight, captionContainer.clientWidth, false/*displayForcedOnlyMode*/, function (err) {
+                logger.info('renderCaption :', err);
+                //TODO add ErrorHandler management
+            }, previousISDState, true /*enableRollUp*/);
+            finalCue.id = cue.cueID;
+            eventBus.trigger(Events.CAPTION_RENDERED, {captionDiv: finalCue, currentTrackIdx});
+        }
     }
 
     /*
@@ -409,7 +403,7 @@ function TextTracks() {
             track.cellResolution = currentItem.cellResolution;
             track.isFromCEA608 = currentItem.isFromCEA608;
 
-            if (currentItem.type === 'html') {
+            if (currentItem.type === 'html' && captionContainer) {
                 cue = new Cue(currentItem.start - timeOffset, currentItem.end - timeOffset, '');
                 cue.cueHTMLElement = currentItem.cueHTMLElement;
                 cue.isd = currentItem.isd;
@@ -432,42 +426,56 @@ function TextTracks() {
                     if (track.mode === Constants.TEXT_SHOWING) {
                         if (this.isd) {
                             renderCaption(this);
-                            log('Cue enter id:' + this.cueID);
+                            logger.debug('Cue enter id:' + this.cueID);
                         } else {
                             captionContainer.appendChild(this.cueHTMLElement);
                             scaleCue.call(self, this);
+                            eventBus.trigger(Events.CAPTION_RENDERED, {captionDiv: this.cueHTMLElement, currentTrackIdx});
                         }
                     }
                 };
 
                 cue.onexit = function () {
-                    const divs = captionContainer.childNodes;
-                    for (let i = 0; i < divs.length; ++i) {
-                        if (divs[i].id === this.cueID) {
-                            log('Cue exit id:' + divs[i].id);
-                            captionContainer.removeChild(divs[i]);
+                    if (captionContainer) {
+                        const divs = captionContainer.childNodes;
+                        for (let i = 0; i < divs.length; ++i) {
+                            if (divs[i].id === this.cueID) {
+                                logger.debug('Cue exit id:' + divs[i].id);
+                                captionContainer.removeChild(divs[i]);
+                            }
                         }
                     }
                 };
             } else {
-                cue = new Cue(currentItem.start - timeOffset, currentItem.end - timeOffset, currentItem.data);
-                if (currentItem.styles) {
-                    if (currentItem.styles.align !== undefined && 'align' in cue) {
-                        cue.align = currentItem.styles.align;
+                if (currentItem.data) {
+                    cue = new Cue(currentItem.start - timeOffset, currentItem.end - timeOffset, currentItem.data);
+                    if (currentItem.styles) {
+                        if (currentItem.styles.align !== undefined && 'align' in cue) {
+                            cue.align = currentItem.styles.align;
+                        }
+                        if (currentItem.styles.line !== undefined && 'line' in cue) {
+                            cue.line = currentItem.styles.line;
+                        }
+                        if (currentItem.styles.position !== undefined && 'position' in cue) {
+                            cue.position = currentItem.styles.position;
+                        }
+                        if (currentItem.styles.size !== undefined && 'size' in cue) {
+                            cue.size = currentItem.styles.size;
+                        }
                     }
-                    if (currentItem.styles.line !== undefined && 'line' in cue) {
-                        cue.line = currentItem.styles.line;
-                    }
-                    if (currentItem.styles.position !== undefined && 'position' in cue) {
-                        cue.position = currentItem.styles.position;
-                    }
-                    if (currentItem.styles.size !== undefined && 'size' in cue) {
-                        cue.size = currentItem.styles.size;
-                    }
+                    cue.onenter = function () {
+                        if (track.mode === Constants.TEXT_SHOWING) {
+                            eventBus.trigger(Events.CAPTION_RENDERED, {currentTrackIdx});
+                        }
+                    };
                 }
             }
             try {
-                track.addCue(cue);
+                if (cue) {
+                    track.addCue(cue);
+                } else {
+                    logger.error('impossible to display subtitles.');
+                }
             } catch (e) {
                 // Edge crash, delete everything and start adding again
                 // @see https://developer.microsoft.com/en-us/microsoft-edge/platform/issues/11979877/
@@ -480,7 +488,7 @@ function TextTracks() {
 
     function getTrackByIdx(idx) {
         return idx >= 0 && textTrackQueue[idx] ?
-            videoModel.getTextTrack(textTrackQueue[idx].kind, textTrackQueue[idx].label, textTrackQueue[idx].lang, textTrackQueue[idx].isTTML, textTrackQueue[idx].isEmbedded) : null;
+            videoModel.getTextTrack(textTrackQueue[idx].kind, textTrackQueue[idx].id, textTrackQueue[idx].lang, textTrackQueue[idx].isTTML, textTrackQueue[idx].isEmbedded) : null;
     }
 
     function getCurrentTrackIdx() {
@@ -490,7 +498,7 @@ function TextTracks() {
     function getTrackIdxForId(trackId) {
         let idx = -1;
         for (let i = 0; i < textTrackQueue.length; i++) {
-            if (textTrackQueue[i].label === trackId) {
+            if (textTrackQueue[i].id === trackId) {
                 idx = i;
                 break;
             }
@@ -552,14 +560,10 @@ function TextTracks() {
     function deleteAllTextTracks() {
         const ln = trackElementArr ? trackElementArr.length : 0;
         for (let i = 0; i < ln; i++) {
-            if (isChrome) {
-                videoModel.removeChild(trackElementArr[i]);
-            } else {
-                const track = getTrackByIdx(i);
-                if (track) {
-                    deleteTrackCues.call(this, track);
-                    track.mode = 'disabled';
-                }
+            const track = getTrackByIdx(i);
+            if (track) {
+                deleteTrackCues.call(this, track);
+                track.mode = 'disabled';
             }
         }
         trackElementArr = [];
@@ -579,9 +583,6 @@ function TextTracks() {
 
     /* Set native cue style to transparent background to avoid it being displayed. */
     function setNativeCueStyle() {
-        if (!isChrome) {
-            return;
-        }
         let styleElement = document.getElementById('native-cue-style');
         if (styleElement) {
             return; //Already set
@@ -592,22 +593,23 @@ function TextTracks() {
         document.head.appendChild(styleElement);
         const stylesheet = styleElement.sheet;
         const video = videoModel.getElement();
-        if (video) {
-            if (video.id) {
-                stylesheet.insertRule('#' + video.id + '::cue {background: transparent}', 0);
-            } else if (video.classList.length !== 0) {
-                stylesheet.insertRule('.' + video.className + '::cue {background: transparent}', 0);
-            } else {
-                stylesheet.insertRule('video::cue {background: transparent}', 0);
+        try {
+            if (video) {
+                if (video.id) {
+                    stylesheet.insertRule('#' + video.id + '::cue {background: transparent}', 0);
+                } else if (video.classList.length !== 0) {
+                    stylesheet.insertRule('.' + video.className + '::cue {background: transparent}', 0);
+                } else {
+                    stylesheet.insertRule('video::cue {background: transparent}', 0);
+                }
             }
+        } catch (e) {
+            logger.info('' + e.message);
         }
     }
 
     /* Remove the extra cue style with transparent background for native cues. */
     function removeNativeCueStyle() {
-        if (!isChrome) {
-            return;
-        }
         const styleElement = document.getElementById('native-cue-style');
         if (styleElement) {
             document.head.removeChild(styleElement);
@@ -657,6 +659,8 @@ function TextTracks() {
         deleteTextTrack: deleteTextTrack,
         setConfig: setConfig
     };
+
+    setup();
 
     return instance;
 }

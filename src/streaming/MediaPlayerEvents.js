@@ -97,7 +97,7 @@ class MediaPlayerEvents extends EventsBase {
         this.FRAGMENT_LOADING_ABANDONED = 'fragmentLoadingAbandoned';
 
         /**
-         * Triggered when {@link module:Debug} log method is called.
+         * Triggered when {@link module:Debug} logger methods are called.
          * @event MediaPlayerEvents#LOG
          */
         this.LOG = 'log';
@@ -201,9 +201,21 @@ class MediaPlayerEvents extends EventsBase {
 
         /**
          * Triggered when a ttml chunk has to be parsed.
-         * @event MediaPlayerEvents#TTML_PARSED
+         * @event MediaPlayerEvents#TTML_TO_PARSE
          */
         this.TTML_TO_PARSE = 'ttmlToParse';
+
+        /**
+         * Triggered when a caption is rendered.
+         * @event MediaPlayerEvents#CAPTION_RENDERED
+         */
+        this.CAPTION_RENDERED = 'captionRendered';
+
+        /**
+         * Triggered when the caption container is resized.
+         * @event MediaPlayerEvents#CAPTION_CONTAINER_RESIZE
+         */
+        this.CAPTION_CONTAINER_RESIZE = 'captionContainerResize';
 
         /**
          * Sent when enough data is available that the media can be played,
@@ -284,6 +296,12 @@ class MediaPlayerEvents extends EventsBase {
          * @event MediaPlayerEvents#PLAYBACK_SEEK_ASKED
          */
         this.PLAYBACK_SEEK_ASKED = 'playbackSeekAsked';
+
+        /**
+         * Sent when the video element reports stalled
+         * @event MediaPlayerEvents#PLAYBACK_STALLED
+         */
+        this.PLAYBACK_STALLED = 'playbackStalled';
 
         /**
          * Sent when playback of the media starts after having been paused;

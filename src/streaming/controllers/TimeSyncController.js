@@ -33,36 +33,37 @@ import DashJSError from './../vo/DashJSError';
 import {HTTPRequest} from './../vo/metrics/HTTPRequest';
 import EventBus from './../../core/EventBus';
 import Events from './../../core/events/Events';
+import Errors from './../../core/errors/Errors';
 import FactoryMaker from '../../core/FactoryMaker';
 import Debug from '../../core/Debug';
 import URLUtils from '../utils/URLUtils';
 
-const TIME_SYNC_FAILED_ERROR_CODE = 1;
 const HTTP_TIMEOUT_MS = 5000;
 
 function TimeSyncController() {
 
-    let context = this.context;
-    let log = Debug(context).getInstance().log;
-    let eventBus = EventBus(context).getInstance();
-
+    const context = this.context;
+    const eventBus = EventBus(context).getInstance();
     const urlUtils = URLUtils(context).getInstance();
 
     let instance,
+        logger,
         offsetToDeviceTimeMs,
         isSynchronizing,
-        isInitialised,
         useManifestDateHeaderTimeSource,
         handlers,
         metricsModel,
         dashMetrics,
         baseURLController;
 
+    function setup() {
+        logger = Debug(context).getInstance().getLogger(instance);
+    }
+
     function initialize(timingSources, useManifestDateHeader) {
         useManifestDateHeaderTimeSource = useManifestDateHeader;
         offsetToDeviceTimeMs = 0;
         isSynchronizing = false;
-        isInitialised = false;
 
         // a list of known schemeIdUris and a method to call with @value
         handlers = {
@@ -91,7 +92,6 @@ function TimeSyncController() {
 
         if (!getIsSynchronizing()) {
             attemptSync(timingSources);
-            setIsInitialised(true);
         }
     }
 
@@ -121,10 +121,6 @@ function TimeSyncController() {
 
     function getIsSynchronizing() {
         return isSynchronizing;
-    }
-
-    function setIsInitialised(value) {
-        isInitialised = value;
     }
 
     function setOffsetMs(value) {
@@ -293,7 +289,11 @@ function TimeSyncController() {
 
     function completeTimeSyncSequence(failed, time, offset) {
         setIsSynchronizing(false);
-        eventBus.trigger(Events.TIME_SYNCHRONIZATION_COMPLETED, { time: time, offset: offset, error: failed ? new DashJSError(TIME_SYNC_FAILED_ERROR_CODE) : null });
+        eventBus.trigger(Events.TIME_SYNCHRONIZATION_COMPLETED, { time: time, offset: offset, error: failed ? new DashJSError(Errors.TIME_SYNC_FAILED_ERROR_CODE, Errors.TIME_SYNC_FAILED_ERROR_MESSAGE) : null });
+    }
+
+    function calculateTimeOffset(serverTime, deviceTime) {
+        return serverTime - deviceTime;
     }
 
     function attemptSync(sources, sourceIndex) {
@@ -327,14 +327,14 @@ function TimeSyncController() {
                     source.value,
                     function (serverTime) {
                         // the timing source returned something useful
-                        let deviceTime = new Date().getTime();
-                        let offset = serverTime - deviceTime;
+                        const deviceTime = new Date().getTime();
+                        const offset = calculateTimeOffset(serverTime, deviceTime);
 
                         setOffsetMs(offset);
 
-                        log('Local time:      ' + new Date(deviceTime));
-                        log('Server time:     ' + new Date(serverTime));
-                        log('Difference (ms): ' + offset);
+                        logger.info('Local time: ' + new Date(deviceTime));
+                        logger.info('Server time: ' + new Date(serverTime));
+                        logger.info('Server Time - Local Time (ms): ' + offset);
 
                         onComplete(serverTime, offset);
                     },
@@ -358,7 +358,6 @@ function TimeSyncController() {
     }
 
     function reset() {
-        setIsInitialised(false);
         setIsSynchronizing(false);
     }
 
@@ -369,12 +368,13 @@ function TimeSyncController() {
         reset: reset
     };
 
+    setup();
+
     return instance;
 }
 
 TimeSyncController.__dashjs_factory_name = 'TimeSyncController';
-let factory = FactoryMaker.getSingletonFactory(TimeSyncController);
-factory.TIME_SYNC_FAILED_ERROR_CODE = TIME_SYNC_FAILED_ERROR_CODE;
+const factory = FactoryMaker.getSingletonFactory(TimeSyncController);
 factory.HTTP_TIMEOUT_MS = HTTP_TIMEOUT_MS;
 FactoryMaker.updateSingletonFactory(TimeSyncController.__dashjs_factory_name, factory);
 export default factory;
